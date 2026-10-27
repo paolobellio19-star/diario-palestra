@@ -236,6 +236,27 @@ const maxKg = (sets) => { const k = sets.map((s) => s.kg).filter((v) => v != nul
 
 function datalist() { return `<datalist id="exList">${exerciseNames().map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`; }
 
+/* ---------- schede consigliate ---------- */
+const POSTURA = [
+  { name: 'Gatto-mucca', sets: 2, reps: 10, rest: 30 },
+  { name: 'Superman', sets: 3, reps: 10, rest: 30 },
+  { name: 'Rotazione busto 90/90', sets: 2, reps: 8, rest: 30 },
+];
+const TAPIS = { name: 'Tapis roulant', type: 'cardio', min: 15 };
+const f = (name, sets, reps, rest) => ({ name, sets, reps, kg: null, rest });
+const PRESETS = [
+  { name: 'A – Forza (tapis in salita)', items: [...POSTURA, TAPIS,
+    f('Chest press', 3, 10, 90), f('Lat machine', 3, 10, 90), TAPIS,
+    f('Leg press', 3, 10, 90), f('Crunch', 3, 15, 45), TAPIS] },
+  { name: 'B – Resistenza (tapis a intervalli)', items: [...POSTURA, TAPIS,
+    f('Leg press', 3, 15, 60), f('Ponte glutei', 3, 15, 45), TAPIS,
+    f('Chest press', 3, 15, 60), f('Lat machine', 3, 15, 60), TAPIS] },
+  { name: 'C – Mista (tapis a ritmo costante)', items: [...POSTURA, TAPIS,
+    f('Lat machine', 3, 12, 75), f('Plank (secondi)', 3, 30, 45), TAPIS,
+    f('Leg press', 3, 12, 75), f('Chest press', 3, 12, 75), TAPIS] },
+];
+const missingPresets = () => data.presetsAdded ? [] : PRESETS.filter((p) => !data.routines.some((r) => r.name === p.name));
+
 /* ---------- grafico SVG ---------- */
 function chart(points, unit) {
   if (points.length < 2) return `<p class="muted small">Servono almeno 2 registrazioni per vedere il grafico.</p>`;
@@ -360,7 +381,9 @@ function viewStorico() {
   const cardioField = cardioEx && exEntries.filter((x) => x.e.sets[0]?.km != null).length >= 2 ? 'km' : 'min';
   const unit = cardioEx ? (cardioField === 'km' ? 'km' : 'min') : 'kg';
   const pts = exEntries.map(({ w, e }) => {
-    const k = cardioEx ? (isCardio(e) ? e.sets[0]?.[cardioField] ?? null : null) : (isCardio(e) ? null : maxKg(e.sets));
+    const sameName = w.entries.filter((x) => x.name === ui.histEx && isCardio(x));
+    const vals = sameName.map((x) => x.sets[0]?.[cardioField]).filter((v) => v != null);
+    const k = cardioEx ? (vals.length ? vals.reduce((a, b) => a + b, 0) : null) : (isCardio(e) ? null : maxKg(e.sets));
     return k != null ? { x: w.date, y: k } : null;
   }).filter(Boolean);
   const best = pts.length ? Math.max(...pts.map((p) => p.y)) : null;
@@ -447,7 +470,14 @@ function viewSchede() {
       <p class="muted small">Se lasci vuoti Kg, minuti o km, all'avvio verranno proposti quelli dell'ultima volta. Tapis roulant, cyclette, ellittica e simili vengono impostati come cardio in automatico.</p>
       ${datalist()}`;
   }
-  return `<section class="card"><div class="row between"><h2>Le tue schede</h2><button class="btn primary small" data-action="newRoutine">+ Nuova</button></div>
+  const miss = missingPresets();
+  return `${miss.length ? `<section class="card preset">
+      <p class="label">Schede consigliate per te</p>
+      <p class="muted small">3 schede da alternare (A → B → C): posturali, poi 15' di tapis roulant, 2 esercizi, 15' di tapis, 2 esercizi, 15' di tapis. Puoi modificarle quando vuoi.</p>
+      <div class="list">${miss.map((p) => `<div class="li"><b>${esc(p.name)}</b></div>`).join('')}</div>
+      <button class="btn primary wide" data-action="addPresets">Aggiungi ${miss.length === 1 ? 'la scheda' : 'le ' + miss.length + ' schede'}</button>
+    </section>` : ''}
+    <section class="card"><div class="row between"><h2>Le tue schede</h2><button class="btn primary small" data-action="newRoutine">+ Nuova</button></div>
       ${data.routines.length ? `<div class="list">${data.routines.map((r) => `<div class="li">
         <div><b>${esc(r.name)}</b><div class="muted small">${r.items.map((i) => esc(i.name)).join(', ') || 'vuota'}</div></div>
         <div class="row"><button class="btn small" data-action="editRoutine" data-id="${r.id}">Modifica</button>
@@ -572,6 +602,11 @@ const actions = {
   },
   deleteWeight: (b) => { if (confirm('Eliminare questa registrazione?')) { data.weights = data.weights.filter((w) => w.id !== b.dataset.id); save(); } },
 
+  addPresets: () => {
+    missingPresets().forEach((p) => data.routines.push({ id: uid(), name: p.name, items: p.items.map((i) => ({ ...i })) }));
+    data.presetsAdded = true;
+    save(); toast('Schede aggiunte 💪');
+  },
   newRoutine: () => { ui.draft = { id: uid(), name: '', items: [{ name: '', sets: 3, reps: 10, kg: null, rest: 90 }] }; render(); },
   editRoutine: (b) => { const r = data.routines.find((x) => x.id === b.dataset.id); ui.draft = JSON.parse(JSON.stringify(r)); render(); },
   deleteRoutine: (b) => { if (confirm('Eliminare questa scheda?')) { data.routines = data.routines.filter((r) => r.id !== b.dataset.id); save(); } },
