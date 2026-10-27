@@ -20,7 +20,7 @@ const DEFAULT_EXERCISES = ['Panca piana', 'Panca inclinata', 'Squat', 'Stacco da
   'Rematore con bilanciere', 'Military press', 'Alzate laterali', 'Curl bicipiti', 'Pushdown tricipiti', 'Dip',
   'Leg press', 'Leg extension', 'Leg curl', 'Affondi', 'Hip thrust', 'Polpacci', 'Crunch', 'Plank', 'Tapis roulant', 'Cyclette'];
 
-const emptyData = () => ({ version: 1, updatedAt: 0, routines: [], workouts: [], weights: [], active: null });
+const emptyData = () => ({ version: 1, updatedAt: 0, routines: [], workouts: [], weights: [], videos: {}, active: null });
 function readLocal() { try { const d = JSON.parse(localStorage.getItem(LS_DATA)); return d && d.version ? { ...emptyData(), ...d } : null; } catch { return null; } }
 
 let data = readLocal() || emptyData();
@@ -187,6 +187,52 @@ const maxKg = (sets) => { const k = sets.map((s) => s.kg).filter((v) => v != nul
 
 function datalist() { return `<datalist id="exList">${exerciseNames().map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`; }
 
+/* ---------- video esercizi ---------- */
+const videoKey = (name) => name.trim().toLowerCase();
+const videoFor = (name) => (data.videos || {})[videoKey(name)] || '';
+function videoBtn(name) {
+  const has = !!videoFor(name);
+  return `<button class="vbtn ${has ? 'has' : ''}" data-action="video" data-name="${esc(name)}" aria-label="Video di ${esc(name)}" title="${has ? 'Guarda il video' : 'Aggiungi un video'}">▶</button>`;
+}
+function youtubeId(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.replace(/^(www|m)\./, '');
+    if (h === 'youtu.be') return u.pathname.slice(1).split('/')[0];
+    if (h.endsWith('youtube.com') || h.endsWith('youtube-nocookie.com')) {
+      if (u.searchParams.get('v')) return u.searchParams.get('v');
+      const m = u.pathname.match(/^\/(shorts|embed|live)\/([\w-]{6,})/);
+      if (m) return m[2];
+    }
+  } catch { /* non è un URL */ }
+  return null;
+}
+let videoName = '';
+function openVideo(name, editing = false) {
+  videoName = name;
+  const url = videoFor(name);
+  const id = url && youtubeId(url);
+  const search = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(name + ' esecuzione corretta');
+  let body;
+  if (url && !editing) {
+    body = (id
+      ? `<div class="video-wrap"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0&playsinline=1" title="Video ${esc(name)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`
+      : `<a class="btn primary wide" href="${esc(url)}" target="_blank" rel="noopener">Apri il video ↗</a>`) +
+      `<div class="row"><button class="btn small" data-action="videoEdit">Cambia video</button><button class="btn small ghost danger" data-action="videoRemove">Rimuovi</button></div>`;
+  } else {
+    body = `<ol class="steps">
+        <li><a class="btn wide" href="${search}" target="_blank" rel="noopener">🔍 Cerca "${esc(name)}" su YouTube</a></li>
+        <li>Scegli un video, tocca <b>Condividi → Copia link</b></li>
+        <li>Incollalo qui sotto:</li>
+      </ol>
+      <div class="row"><input id="videoUrl" type="url" inputmode="url" placeholder="https://youtu.be/…" value="${esc(url)}"><button class="btn primary" data-action="videoSave">Salva</button></div>
+      <p class="err" id="videoErr"></p>`;
+  }
+  $('#videoBox').innerHTML = `<div class="row between"><h2>${esc(name)}</h2><button class="icon" data-action="videoClose" aria-label="Chiudi">✕</button></div>${body}`;
+  $('#videoModal').classList.remove('hidden');
+}
+function closeVideo() { $('#videoModal').classList.add('hidden'); $('#videoBox').innerHTML = ''; }
+
 /* ---------- grafico SVG ---------- */
 function chart(points, unit) {
   if (points.length < 2) return `<p class="muted small">Servono almeno 2 registrazioni per vedere il grafico.</p>`;
@@ -253,7 +299,7 @@ function viewOggi() {
 function entryCard(e, i) {
   const prev = lastEntryFor(e.name);
   return `<section class="card">
-    <div class="row between"><h3>${esc(e.name)}</h3><button class="icon" data-action="removeEntry" data-i="${i}" aria-label="Rimuovi esercizio">✕</button></div>
+    <div class="row between"><div class="row"><h3>${esc(e.name)}</h3>${videoBtn(e.name)}</div><button class="icon" data-action="removeEntry" data-i="${i}" aria-label="Rimuovi esercizio">✕</button></div>
     ${prev ? `<p class="muted small">Ultima volta (${fmtShort(prev.w.date)}): ${setsText(prev.e.sets)}</p>` : ''}
     <div class="sets">
       <div class="set head"><span>#</span><span>Ripetiz.</span><span>Kg</span><span></span></div>
@@ -304,7 +350,7 @@ function viewStorico() {
       ${ws.map((w) => `<details class="workout li">
         <summary><div><b>${esc(w.name)}</b><div class="muted small">${fmtDate(w.date)}${w.duration ? ' · ' + w.duration + ' min' : ''} · ${w.entries.length} esercizi</div></div></summary>
         <div class="detail">
-          ${w.entries.map((e) => `<div class="ex-line"><b>${esc(e.name)}</b><span>${setsText(e.sets)}</span></div>`).join('')}
+          ${w.entries.map((e) => `<div class="ex-line"><b>${esc(e.name)} ${videoBtn(e.name)}</b><span>${setsText(e.sets)}</span></div>`).join('')}
           ${w.notes ? `<p class="muted small">📝 ${esc(w.notes)}</p>` : ''}
           <div class="row"><button class="btn small" data-action="repeatWorkout" data-id="${w.id}">Ripeti</button>
           <button class="btn small ghost danger" data-action="deleteWorkout" data-id="${w.id}">Elimina</button></div>
@@ -353,7 +399,7 @@ function viewSchede() {
         <input data-draft="name" value="${esc(d.name)}" placeholder="Nome (es. Giorno A – Petto e tricipiti)">
       </section>
       ${d.items.map((it, i) => `<div class="item">
-        <div class="name"><input list="exList" data-item="${i}.name" value="${esc(it.name)}" placeholder="Esercizio"><button class="icon" data-action="removeItem" data-i="${i}" aria-label="Rimuovi">✕</button></div>
+        <div class="name"><input list="exList" data-item="${i}.name" value="${esc(it.name)}" placeholder="Esercizio">${it.name ? videoBtn(it.name) : ''}<button class="icon" data-action="removeItem" data-i="${i}" aria-label="Rimuovi">✕</button></div>
         <label>Serie<input inputmode="numeric" data-item="${i}.sets" value="${it.sets ?? ''}"></label>
         <label>Ripetiz.<input inputmode="numeric" data-item="${i}.reps" value="${it.reps ?? ''}"></label>
         <label>Kg<input inputmode="decimal" data-item="${i}.kg" value="${it.kg ?? ''}" placeholder="auto"></label>
@@ -487,6 +533,22 @@ const actions = {
   },
   importData: () => $('#importFile').click(),
   syncNow: () => pull(),
+  video: (b) => openVideo(b.dataset.name),
+  videoClose: closeVideo,
+  videoBackdrop: (b, ev) => { if (ev.target === b) closeVideo(); },
+  videoEdit: () => openVideo(videoName, true),
+  videoRemove: () => {
+    if (!confirm('Rimuovere il video di questo esercizio?')) return;
+    delete data.videos[videoKey(videoName)]; save(); openVideo(videoName);
+  },
+  videoSave: () => {
+    let url = $('#videoUrl').value.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+    try { new URL(url); } catch { $('#videoErr').textContent = 'Incolla un link valido (es. https://youtu.be/…)'; return; }
+    data.videos = data.videos || {};
+    data.videos[videoKey(videoName)] = url;
+    save(); openVideo(videoName); toast('Video salvato');
+  },
   logout: () => {
     if (mode() === 'cloud' && !confirm('Uscire? I dati restano salvati su Cloudflare.')) return;
     localStorage.removeItem(LS_PW); localStorage.removeItem(LS_MODE); setSync('', ''); showLogin();
@@ -536,6 +598,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
   if (ev.target.id === 'newEx') actions.addEntry();
   if (ev.target.id === 'wKg') actions.addWeight();
+  if (ev.target.id === 'videoUrl') actions.videoSave();
 });
 
 /* ---------- avvio ---------- */
