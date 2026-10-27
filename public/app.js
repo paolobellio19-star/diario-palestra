@@ -703,6 +703,19 @@ const ACTIVITY = [
   { v: 1.725, label: 'Intenso (sport quasi tutti i giorni)' },
 ];
 const foodState = { sheet: null, profDraft: null, editProfile: false };
+const GENERIC = (window.GENERIC_FOODS || []).map(([name, kcal, p, c, f, serving, label], i) =>
+  ({ id: 'g' + i, name, brand: '', generic: true, per100: { kcal, p, c, f }, serving: serving || null, servingLabel: label || '' }));
+const fold = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ');
+function localSearch(q) {
+  const words = fold(q).split(/\s+/).filter((w) => w.length > 1);
+  if (!words.length) return [];
+  return GENERIC.map((g) => {
+    const n = fold(g.name);
+    if (!words.every((w) => n.includes(w))) return null;
+    const score = (n.startsWith(words[0]) ? 0 : n.includes(' ' + words[0]) ? 1 : 2) * 100 + n.length;
+    return { g, score };
+  }).filter(Boolean).sort((a, b) => a.score - b.score).slice(0, 15).map((x) => x.g);
+}
 if (!ui.foodDate) ui.foodDate = today();
 
 const shiftDate = (iso, d) => { const x = dateObj(iso); x.setDate(x.getDate() + d); return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`; };
@@ -807,7 +820,7 @@ function openSheet(meal) {
 function closeSheet() { foodState.sheet = null; $('#sheet').classList.add('hidden'); $('#sheetBox').innerHTML = ''; }
 
 function foodRow(f, attrs) {
-  return `<button class="food-res" ${attrs}><span><b>${esc(f.name)}</b><small>${f.brand ? esc(f.brand) : ''}</small></span>
+  return `<button class="food-res" ${attrs}><span><b>${esc(f.name)}</b><small>${f.brand ? esc(f.brand) : f.generic ? 'Generico' + (f.servingLabel ? ' · ' + esc(f.servingLabel) : '') : ''}</small></span>
     <span class="r"><b>${fmtNum(f.per100.kcal, 0)}</b><small>kcal/100g</small></span></button>`;
 }
 
@@ -821,7 +834,7 @@ function renderSheet() {
     body = `<button class="btn small ghost" data-action="sheetBack">‹ Indietro</button>
       <div><h3>${esc(f.name)}</h3><p class="muted small">${f.brand ? esc(f.brand) + ' · ' : ''}per 100 g: ${f.per100.kcal} kcal · P ${fmtNum(f.per100.p)} · C ${fmtNum(f.per100.c)} · G ${fmtNum(f.per100.f)}</p></div>
       <label class="qty">Quantità<span class="row"><input id="foodG" inputmode="decimal" value="${fmtNum(g, 1)}"><b>g</b></span></label>
-      <div class="chips">${f.serving ? `<button class="chip" data-action="setG" data-g="${f.serving}">1 porzione (${f.serving} g)</button>` : ''}
+      <div class="chips">${f.serving ? `<button class="chip" data-action="setG" data-g="${f.serving}">${f.servingLabel ? esc(f.servingLabel) : '1 porzione (' + f.serving + ' g)'}</button>` : ''}
         ${[30, 50, 100, 150, 200].map((x) => `<button class="chip" data-action="setG" data-g="${x}">${x} g</button>`).join('')}</div>
       <div class="preview" id="foodPrev">${previewHtml(n)}</div>
       <button class="btn primary wide" data-action="addFood">Aggiungi a ${meal.label}</button>`;
@@ -829,11 +842,8 @@ function renderSheet() {
     const tabs = [['cerca', 'Cerca'], ['recenti', 'Recenti'], ['pasti', 'Pasti salvati'], ['manuale', 'Manuale']];
     body = `<div class="seg wide">${tabs.map(([k, l]) => `<button class="${s.tab === k ? 'on' : ''}" data-action="sheetTab" data-t="${k}">${l}</button>`).join('')}</div>`;
     if (s.tab === 'cerca') {
-      body += `<div class="row"><input id="foodQ" type="search" enterkeyhint="search" placeholder="Es. yogurt greco, Barilla spaghetti…" value="${esc(s.query)}"><button class="btn primary" data-action="foodSearch">Cerca</button></div>
-        <p class="muted small">Cerca per nome e marca, oppure scrivi il numero del codice a barre.</p>
-        ${s.loading ? '<p class="muted">Cerco…</p>' : ''}${s.err ? `<p class="err">${esc(s.err)}</p>` : ''}
-        ${s.results ? (s.results.length ? `<div class="res-list">${s.results.map((f, i) => foodRow(f, `data-action="pickRes" data-i="${i}"`)).join('')}</div>`
-          : `<p class="muted">Nessun risultato. Prova con altre parole o inseriscilo in <b>Manuale</b>.</p>`) : ''}`;
+      body += `<input id="foodQ" type="search" enterkeyhint="search" autocomplete="off" placeholder="Es. pasta, petto di pollo, mela…" value="${esc(s.query)}">
+        <div id="resBox" class="res-list">${resultsHtml()}</div>`;
     } else if (s.tab === 'recenti') {
       const lib = [...(data.foods || [])].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0)).slice(0, 40);
       body += lib.length ? `<div class="res-list">${lib.map((f) => foodRow(f, `data-action="pickLib" data-id="${f.id}"`)).join('')}</div>`
@@ -859,6 +869,20 @@ function renderSheet() {
   }
   $('#sheetBox').innerHTML = `<div class="row between"><h2>${meal.icon} Aggiungi a ${meal.label}</h2><button class="icon" data-action="sheetClose" aria-label="Chiudi">✕</button></div>${body}`;
 }
+function resultsHtml() {
+  const s = foodState.sheet; if (!s) return '';
+  const q = s.query.trim();
+  if (q.length < 2) return '<p class="muted small">Scrivi un alimento: quelli generici compaiono mentre scrivi. Per un prodotto di marca o un codice a barre usa <b>Cerca tra le marche</b>.</p>';
+  const loc = localSearch(q);
+  const sameQuery = s.resultsFor === q;
+  return `${loc.length ? `<p class="label">Generici</p>${loc.map((f) => foodRow(f, `data-action="pickGen" data-id="${f.id}"`)).join('')}`
+      : '<p class="muted small">Nessun alimento generico con questo nome.</p>'}
+    <p class="label">Prodotti di marca</p>
+    ${s.loading ? '<p class="muted">Cerco…</p>' : s.err ? `<p class="err">${esc(s.err)}</p>` : ''}
+    ${sameQuery && s.results ? (s.results.length ? s.results.map((f, i) => foodRow(f, `data-action="pickRes" data-i="${i}"`)).join('')
+      : '<p class="muted small">Nessun prodotto trovato. Puoi inserirlo in <b>Manuale</b>.</p>')
+      : s.loading ? '' : `<button class="btn wide" data-action="foodSearch">🔍 Cerca "${esc(q)}" tra le marche</button>`}`;
+}
 const previewHtml = (n) => `<b>${fmtNum(n.kcal, 0)} kcal</b><span>P ${fmtNum(n.p)} g</span><span>C ${fmtNum(n.c)} g</span><span>G ${fmtNum(n.f)} g</span>`;
 
 async function doFoodSearch() {
@@ -866,7 +890,7 @@ async function doFoodSearch() {
   s.query = ($('#foodQ')?.value || '').trim();
   if (s.query.length < 2) return;
   if (mode() !== 'cloud') { s.err = 'La ricerca online funziona con la sincronizzazione attiva (Schede → Attiva sincronizzazione). Intanto usa "Manuale".'; renderSheet(); return; }
-  s.loading = true; s.err = ''; s.results = null; renderSheet();
+  s.loading = true; s.err = ''; s.results = null; s.resultsFor = s.query; refreshResults();
   try {
     const r = await fetch('/api/food?q=' + encodeURIComponent(s.query), { headers: { Authorization: 'Bearer ' + (localStorage.getItem(LS_PW) || '') } });
     const out = await r.json().catch(() => ({}));
@@ -876,14 +900,15 @@ async function doFoodSearch() {
   } catch (e) {
     s.err = navigator.onLine === false ? 'Sei offline: la ricerca richiede internet. Prova con "Recenti" o "Manuale".' : e.message;
   }
-  s.loading = false; renderSheet();
+  s.loading = false; refreshResults();
 }
+function refreshResults() { const box = $('#resBox'); if (box) box.innerHTML = resultsHtml(); else renderSheet(); }
 
 function upsertLibrary(f, g) {
   data.foods = data.foods || [];
   const key = (f.name + '|' + (f.brand || '')).toLowerCase();
   let lib = data.foods.find((x) => (x.name + '|' + (x.brand || '')).toLowerCase() === key);
-  if (!lib) { lib = { id: uid(), name: f.name, brand: f.brand || '', code: f.code || '', per100: f.per100, serving: f.serving || null }; data.foods.push(lib); }
+  if (!lib) { lib = { id: uid(), name: f.name, brand: f.brand || '', code: f.code || '', per100: f.per100, serving: f.serving || null, servingLabel: f.servingLabel || '', generic: !!f.generic }; data.foods.push(lib); }
   lib.per100 = f.per100; lib.lastG = g; lib.lastUsed = Date.now();
   if (data.foods.length > 300) data.foods = data.foods.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0)).slice(0, 300);
 }
@@ -914,6 +939,7 @@ Object.assign(actions, {
   sheetBack: () => { foodState.sheet.pick = null; foodState.sheet.grams = null; renderSheet(); },
   foodSearch: doFoodSearch,
   pickRes: (b) => { const s = foodState.sheet; const f = s.results[+b.dataset.i]; const lib = (data.foods || []).find((x) => x.name === f.name && x.brand === f.brand); s.pick = { ...f, lastG: lib?.lastG }; renderSheet(); },
+  pickGen: (b) => { const g = GENERIC.find((x) => x.id === b.dataset.id); const lib = (data.foods || []).find((x) => x.name === g.name && !x.brand); foodState.sheet.pick = { ...g, lastG: lib?.lastG }; renderSheet(); },
   pickLib: (b) => { const f = data.foods.find((x) => x.id === b.dataset.id); foodState.sheet.pick = { ...f }; renderSheet(); },
   manualNext: () => {
     const name = $('#mName').value.trim(), kcal = num($('#mKcal').value);
@@ -961,6 +987,7 @@ document.addEventListener('input', (ev) => {
     foodState.profDraft[el.dataset.prof] = el.value;
     if (el.dataset.prof === 'weight') foodState.profDraft._wTouched = true;
   }
+  if (el.id === 'foodQ' && foodState.sheet) { foodState.sheet.query = el.value; refreshResults(); }
   if (el.id === 'foodG' && foodState.sheet?.pick) {
     const g = num(el.value) || 0; foodState.sheet.grams = g;
     $('#foodPrev').innerHTML = previewHtml(nut({ g, per100: foodState.sheet.pick.per100 }));
