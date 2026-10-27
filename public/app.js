@@ -289,17 +289,31 @@ function quickTimer() {
   </div></section>`;
 }
 
+function nextRoutineId() {
+  if (!data.routines.length) return null;
+  const last = sortedWorkouts().find((w) => w.routineId && data.routines.some((r) => r.id === w.routineId));
+  if (!last) return data.routines[0].id;
+  const sorted = [...data.routines].sort((a, b) => a.name.localeCompare(b.name, 'it'));
+  const i = sorted.findIndex((r) => r.id === last.routineId);
+  return sorted[(i + 1) % sorted.length].id;
+}
+
 function viewOggi() {
   const a = data.active;
   if (!a) {
     const last = sortedWorkouts()[0];
+    const next = nextRoutineId();
+    const routines = [...data.routines].sort((x, y) => x.name.localeCompare(y.name, 'it'));
+    const presets = missingPresets();
     return `<section class="card">
-      <div><h2>Nuovo allenamento</h2><p class="muted">${fmtDateLong(today())}</p></div>
-      ${data.routines.length
-        ? `<p class="label">Parti da una scheda</p><div class="grid">${data.routines.map((r) =>
-          `<button class="btn big" data-action="startRoutine" data-id="${r.id}">${esc(r.name)}<small>${r.items.length} esercizi</small></button>`).join('')}</div>`
-        : `<p class="muted">Non hai ancora schede: creale nella sezione <b>Schede</b>, oppure inizia un allenamento libero.</p>`}
-      <button class="btn primary wide" data-action="startFree">+ Allenamento libero</button>
+      <div><h2>Seleziona scheda</h2><p class="muted">${fmtDateLong(today())}</p></div>
+      ${routines.length || presets.length ? `<div class="pick-list">
+        ${routines.map((r) => `<button class="pick ${r.id === next ? 'next' : ''}" data-action="startRoutine" data-id="${r.id}">
+          <span><b>${esc(r.name)}</b><small>${r.items.length} esercizi${r.id === next ? ' · <em>consigliata oggi</em>' : ''}</small></span><i>▶</i></button>`).join('')}
+        ${presets.map((p, i) => `<button class="pick ${!routines.length && i === 0 ? 'next' : ''}" data-action="startPreset" data-name="${esc(p.name)}">
+          <span><b>${esc(p.name)}</b><small>${p.items.length} esercizi${!routines.length && i === 0 ? ' · <em>consigliata oggi</em>' : ''}</small></span><i>▶</i></button>`).join('')}
+      </div>` : `<p class="muted">Non hai ancora schede: creale nella sezione <b>Schede</b>, oppure inizia un allenamento libero.</p>`}
+      <button class="btn ghost wide" data-action="startFree">+ Allenamento libero</button>
     </section>
     ${quickTimer()}
     ${last ? `<section class="card"><p class="label">Ultimo allenamento</p>
@@ -602,6 +616,12 @@ const actions = {
   },
   deleteWeight: (b) => { if (confirm('Eliminare questa registrazione?')) { data.weights = data.weights.filter((w) => w.id !== b.dataset.id); save(); } },
 
+  startPreset: (b) => {
+    missingPresets().forEach((p) => data.routines.push({ id: uid(), name: p.name, items: p.items.map((i) => ({ ...i })) }));
+    data.presetsAdded = true;
+    const r = data.routines.find((x) => x.name === b.dataset.name);
+    if (r) actions.startRoutine({ dataset: { id: r.id } }); else save();
+  },
   addPresets: () => {
     missingPresets().forEach((p) => data.routines.push({ id: uid(), name: p.name, items: p.items.map((i) => ({ ...i })) }));
     data.presetsAdded = true;
