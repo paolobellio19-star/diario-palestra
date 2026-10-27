@@ -13,14 +13,14 @@ const fmtDate = (iso) => dateObj(iso).toLocaleDateString('it-IT', { weekday: 'sh
 const fmtDateLong = (iso) => dateObj(iso).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
 const fmtShort = (iso) => dateObj(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 const fmtTime = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + pad2(s % 60); };
-const fmtNum = (n, d = 1) => n == null ? '–' : Number(n).toLocaleString('it-IT', { maximumFractionDigits: d });
+const fmtNum = (n, d = 1) => n == null ? '–' : Number(n).toLocaleString('it-IT', { maximumFractionDigits: d, useGrouping: 'always' });
 const num = (v) => { if (v === '' || v == null) return null; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? null : n; };
 
 const DEFAULT_EXERCISES = ['Panca piana', 'Panca inclinata', 'Squat', 'Stacco da terra', 'Lat machine', 'Trazioni',
   'Rematore con bilanciere', 'Military press', 'Alzate laterali', 'Curl bicipiti', 'Pushdown tricipiti', 'Dip',
   'Leg press', 'Leg extension', 'Leg curl', 'Affondi', 'Hip thrust', 'Polpacci', 'Crunch', 'Plank', 'Tapis roulant', 'Cyclette'];
 
-const emptyData = () => ({ version: 1, updatedAt: 0, routines: [], workouts: [], weights: [], food: {}, foods: [], meals: [], profile: null, active: null });
+const emptyData = () => ({ version: 1, updatedAt: 0, routines: [], workouts: [], weights: [], food: {}, foods: [], meals: [], profile: null, health: {}, active: null });
 function readLocal() { try { const d = JSON.parse(localStorage.getItem(LS_DATA)); return d && d.version ? { ...emptyData(), ...d } : null; } catch { return null; } }
 
 let data = readLocal() || emptyData();
@@ -258,6 +258,7 @@ const PRESETS = [
 const missingPresets = () => data.presetsAdded ? [] : PRESETS.filter((p) => !data.routines.some((r) => r.name === p.name));
 
 /* ---------- grafico SVG ---------- */
+const axisNum = (v, range) => Math.abs(v) >= 1000 ? fmtNum(v / 1000, 1) + 'k' : fmtNum(v, range > 20 ? 0 : 1);
 function chart(points, unit) {
   if (points.length < 2) return `<p class="muted small">Servono almeno 2 registrazioni per vedere il grafico.</p>`;
   const W = 340, H = 180, P = { l: 40, r: 14, t: 14, b: 26 };
@@ -272,7 +273,7 @@ function chart(points, unit) {
   const ticks = [0, 0.5, 1].map((f) => y0 + (y1 - y0) * f);
   const last = pts[pts.length - 1];
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafico ${esc(unit)}">
-    ${ticks.map((t) => `<line class="grid-l" x1="${P.l}" x2="${W - P.r}" y1="${Y(t)}" y2="${Y(t)}"/><text class="axis" x="${P.l - 6}" y="${Y(t) + 3}" text-anchor="end">${fmtNum(t)}</text>`).join('')}
+    ${ticks.map((t) => `<line class="grid-l" x1="${P.l}" x2="${W - P.r}" y1="${Y(t)}" y2="${Y(t)}"/><text class="axis" x="${P.l - 6}" y="${Y(t) + 3}" text-anchor="end">${axisNum(t, y1 - y0)}</text>`).join('')}
     <polygon class="area" points="${area}"/>
     <polyline class="line" points="${line}"/>
     ${points.length <= 40 ? pts.slice(0, -1).map((p) => `<circle class="dot" cx="${p[0]}" cy="${p[1]}" r="3"/>`).join('') : ''}
@@ -512,7 +513,7 @@ function viewSchede() {
 
 function render() {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-  const views = { oggi: viewOggi, cibo: viewCibo, storico: viewStorico, peso: viewPeso, schede: viewSchede };
+  const views = { oggi: viewOggi, cibo: viewCibo, storico: viewStorico, peso: () => viewHealth() + viewPeso(), schede: viewSchede };
   $('#view').innerHTML = views[tab]();
   syncWakeLock();
 }
@@ -1018,6 +1019,119 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
   if (ev.target.id === 'foodQ') { ev.preventDefault(); doFoodSearch(); }
   if (ev.target.id === 'foodG') actions.addFood();
+});
+
+/* ============ SALUTE (Apple Watch) ============ */
+const METRICS = {
+  steps: { label: 'Passi', icon: '👟', unit: 'passi', fmt: (v) => fmtNum(v, 0) },
+  sleep: { label: 'Sonno', icon: '😴', unit: 'ore', fmt: (v) => fmtHM(v) },
+  kcal: { label: 'Calorie attive', icon: '🔥', unit: 'kcal', fmt: (v) => fmtNum(v, 0) },
+};
+if (!ui.healthMetric) ui.healthMetric = 'steps';
+const fmtHM = (min) => min == null ? '–' : `${Math.floor(min / 60)} h ${pad2(Math.round(min % 60))}`;
+const healthDay = (iso) => (data.health && data.health[iso]) || {};
+function parseSleep(v) {
+  const t = String(v || '').trim(); if (!t) return null;
+  const m = t.match(/^(\d{1,2})\s*[:.h]\s*(\d{1,2})/i);
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  const n = num(t); return n == null ? null : Math.round(n * 60);
+}
+function avgLast(field, days, endIso) {
+  const vals = [];
+  for (let i = 0; i < days; i++) { const v = healthDay(shiftDate(endIso, -i))[field]; if (v != null) vals.push(v); }
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+function ago(ts) {
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 2) return 'adesso';
+  if (min < 60) return `${min} minuti fa`;
+  const d = new Date(ts);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return (sameDay ? 'oggi' : d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })) + ' alle ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+function healthStat(field, iso, label) {
+  const v = healthDay(iso)[field], avg = avgLast(field, 7, shiftDate(iso, -1));
+  const diff = v != null && avg ? Math.round((v / avg - 1) * 100) : null;
+  return `<div class="stat"><span>${METRICS[field].icon} ${label}</span><b>${v != null ? METRICS[field].fmt(v) : '–'}</b>
+    <span>${diff != null ? `<em class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : ''}${diff}%</em> sulla media` : v == null ? 'nessun dato' : ''}</span></div>`;
+}
+
+function viewHealth() {
+  const yest = shiftDate(today(), -1);
+  const m = ui.healthMetric, meta = METRICS[m];
+  const pts = [];
+  for (let i = 59; i >= 0; i--) { const d = shiftDate(today(), -i), v = healthDay(d)[m]; if (v != null) pts.push({ x: d, y: m === 'sleep' ? v / 60 : v }); }
+  const avg7 = avgLast(m, 7, m === 'sleep' ? today() : yest), avg30 = avgLast(m, 30, m === 'sleep' ? today() : yest);
+  const days = Object.keys(data.health || {}).sort().reverse().slice(0, 14);
+  const e = ui.healthEdit;
+  const sync = data.healthSync;
+  const endpoint = location.origin + '/api/health';
+  return `<section class="card">
+      <div class="row between"><h2>Salute</h2>${sync ? `<span class="muted small">⌚ ${ago(sync.at)}</span>` : ''}</div>
+      <div class="stats">
+        ${healthStat('steps', yest, 'Passi ieri')}
+        ${healthStat('sleep', today(), 'Sonno stanotte')}
+        ${healthStat('kcal', yest, 'Attive ieri')}
+      </div>
+    </section>
+    <section class="card">
+      <div class="seg wide three">${Object.entries(METRICS).map(([k, x]) => `<button class="${k === m ? 'on' : ''}" data-action="healthMetric" data-m="${k}">${x.label}</button>`).join('')}</div>
+      <p class="muted small">Media 7 giorni: <b>${avg7 != null ? meta.fmt(avg7) : '–'}</b> · 30 giorni: <b>${avg30 != null ? meta.fmt(avg30) : '–'}</b></p>
+      ${chart(pts, meta.unit)}
+    </section>
+    ${e ? `<section class="card">
+      <h3>${days.includes(e.date) || healthDay(e.date).steps != null ? 'Modifica' : 'Aggiungi'} giorno</h3>
+      <div class="form2">
+        <label>Giorno<input type="date" id="hDate" value="${e.date}" max="${today()}"></label>
+        <label>Passi<input id="hSteps" inputmode="numeric" value="${e.steps ?? ''}" placeholder="es. 8500"></label>
+        <label>Sonno (ore:minuti)<input id="hSleep" inputmode="decimal" value="${e.sleep != null ? Math.floor(e.sleep / 60) + ':' + pad2(e.sleep % 60) : ''}" placeholder="es. 7:15"></label>
+        <label>Calorie attive<input id="hKcal" inputmode="numeric" value="${e.kcal ?? ''}" placeholder="es. 450"></label>
+      </div>
+      <p class="muted small">Il sonno si riferisce alla notte prima del giorno indicato. I valori corretti a mano non vengono più sovrascritti dall'iPhone.</p>
+      <div class="row"><button class="btn ghost wide" data-action="healthCancel">Annulla</button><button class="btn primary wide" data-action="healthSave">Salva</button></div>
+    </section>` : ''}
+    <section class="card">
+      <div class="row between"><p class="label">Ultimi giorni</p><button class="btn small" data-action="healthEdit" data-d="${yest}">+ Inserisci a mano</button></div>
+      ${days.length ? `<div class="list">${days.map((d) => { const h = healthDay(d); return `<button class="li h-row" data-action="healthEdit" data-d="${d}">
+        <span>${fmtDate(d)}${h.manual && Object.values(h.manual).some(Boolean) ? ' <small class="muted">✎</small>' : ''}</span>
+        <span class="h-vals"><span>👟 ${h.steps != null ? fmtNum(h.steps, 0) : '–'}</span><span>😴 ${h.sleep != null ? fmtHM(h.sleep) : '–'}</span><span>🔥 ${h.kcal != null ? fmtNum(h.kcal, 0) : '–'}</span></span></button>`; }).join('')}</div>`
+        : '<p class="muted small">Ancora nessun dato. Collega l\'Apple Watch (qui sotto) o inseriscili a mano.</p>'}
+    </section>
+    <details class="card setup" ${sync ? '' : 'open'}>
+      <summary><b>⌚ Collegamento Apple Watch</b><span class="muted small">${sync ? 'attivo' : 'da configurare'}</span></summary>
+      <p class="muted small">Ogni mattina alle 8:30 un Comando Rapido dell'iPhone legge da Salute passi e calorie attive di ieri e il sonno della notte, e li invia qui. Ogni invio comprende gli ultimi 7 giorni, così se un giorno salta viene recuperato.</p>
+      <p class="label">Indirizzo da usare nel Comando Rapido</p>
+      <div class="row"><input id="hEndpoint" readonly value="${esc(endpoint)}"><button class="btn small" data-action="copyEndpoint">Copia</button></div>
+      <p class="muted small">La guida passo passo per creare il Comando Rapido te la do in chat su Claude.</p>
+    </details>`;
+}
+
+Object.assign(actions, {
+  healthMetric: (b) => { ui.healthMetric = b.dataset.m; render(); },
+  healthEdit: (b) => { const d = b.dataset.d; const h = healthDay(d); ui.healthEdit = { date: d, steps: h.steps, sleep: h.sleep, kcal: h.kcal }; render(); setTimeout(() => $('#hSteps')?.focus(), 50); },
+  healthCancel: () => { ui.healthEdit = null; render(); },
+  healthSave: () => {
+    const date = $('#hDate').value || today();
+    const steps = num($('#hSteps').value), sleep = parseSleep($('#hSleep').value), kcal = num($('#hKcal').value);
+    if (sleep != null && (sleep < 0 || sleep > 20 * 60)) return toast('Sonno non valido (es. 7:15)');
+    data.health = data.health || {};
+    const day = data.health[date] || (data.health[date] = {});
+    day.manual = day.manual || {};
+    const old = ui.healthEdit;
+    const apply = (field, v, prev) => {
+      if (v == null) { delete day[field]; day.manual[field] = prev != null; return; }
+      if (v !== prev || date !== old.date) day.manual[field] = true;
+      day[field] = field === 'sleep' ? v : Math.round(v);
+    };
+    apply('steps', steps, old.steps); apply('sleep', sleep, old.sleep); apply('kcal', kcal, old.kcal);
+    if (!Object.keys(day).some((k) => k !== 'manual')) delete data.health[date];
+    ui.healthEdit = null; save(); toast('Salvato');
+  },
+  copyEndpoint: () => {
+    const el = $('#hEndpoint');
+    (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(() => toast('Indirizzo copiato'), () => { el.select(); document.execCommand('copy'); toast('Indirizzo copiato'); });
+  },
 });
 
 /* ---------- avvio ---------- */

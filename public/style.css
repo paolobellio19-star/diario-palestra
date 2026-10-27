@@ -209,6 +209,16 @@ textarea { resize: vertical; }
 .sheet-box { width: 100%; max-width: 640px; border-radius: var(--radius) var(--radius) 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); max-height: 90vh; overflow: auto; align-content: start; }
 @media (min-width: 700px) { .overlay.modal { place-items: center; padding: 16px; } .sheet-box { border-radius: var(--radius); } }
 
+/* salute */
+.seg.wide.three { grid-template-columns: repeat(3, 1fr); }
+.stat em { font-style: normal; font-weight: 600; }
+.h-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; font-size: .9rem; }
+.h-vals { display: grid; grid-template-columns: 4.5em 5.5em 3.5em; gap: 6px; text-align: right; color: var(--muted); white-space: nowrap; }
+.setup summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.setup summary::-webkit-details-marker { display: none; }
+.setup[open] summary { margin-bottom: 4px; }
+#hEndpoint { font-size: .8rem; }
+
 /* nav */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 8;
