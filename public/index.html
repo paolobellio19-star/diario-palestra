@@ -31,6 +31,7 @@
 
   <nav class="tabs">
     <button data-tab="oggi"><span>🏋️</span>Oggi</button>
+    <button data-tab="cibo"><span>🍎</span>Cibo</button>
     <button data-tab="storico"><span>📈</span>Storico</button>
     <button data-tab="peso"><span>⚖️</span>Peso</button>
     <button data-tab="schede"><span>📋</span>Schede</button>
@@ -45,6 +46,10 @@
       <button class="btn primary wide" type="submit">Entra</button>
       <button class="btn ghost wide" type="button" data-action="localMode">Usa solo su questo dispositivo</button>
     </form>
+  </div>
+
+  <div id="sheet" class="overlay modal hidden" data-action="sheetBackdrop">
+    <div class="card sheet-box" id="sheetBox"></div>
   </div>
 
   <div id="flash" class="flash" aria-hidden="true"></div>

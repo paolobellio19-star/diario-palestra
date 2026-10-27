@@ -8,6 +8,7 @@ ogni modifica caricata qui viene ripubblicata automaticamente.
 ```
 public/            ← il sito (pagine, stile, logica)
 functions/api/     ← API che salva i dati (sincronizzazione)
+src/food.js        ← ricerca alimenti su Open Food Facts (sezione Cibo)
 src/worker.js      ← punto d'ingresso del Worker
 wrangler.jsonc     ← configurazione Cloudflare (nome, database KV)
 ```

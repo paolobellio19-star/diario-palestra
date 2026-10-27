@@ -14,6 +14,11 @@ function sameString(a, b) {
   return diff === 0;
 }
 
+export function isAuthorized(request, env) {
+  const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  return !!env.APP_PASSWORD && sameString(token, env.APP_PASSWORD);
+}
+
 export async function onRequest({ request, env }) {
   if (!env.APP_PASSWORD) return json({ error: 'APP_PASSWORD non impostata su Cloudflare' }, 500);
   if (!env.DIARIO) return json({ error: 'KV "DIARIO" non collegato su Cloudflare' }, 500);
