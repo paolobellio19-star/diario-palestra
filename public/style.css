@@ -95,6 +95,18 @@ textarea { resize: vertical; }
 .rest { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9rem; }
 .rest input { width: 70px; text-align: center; padding: 6px; }
 
+/* forza / cardio */
+.seg { display: inline-flex; background: var(--card2); border: 1px solid var(--line); border-radius: 999px; padding: 2px; justify-self: start; }
+.seg button { border: 0; background: none; border-radius: 999px; padding: 4px 12px; font-size: .8rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+.seg button.on { background: var(--text); color: var(--bg); }
+.cardio { display: grid; grid-template-columns: 1fr 1fr 1fr 48px; gap: 8px; align-items: end; }
+.cardio label { display: grid; gap: 4px; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.cardio input { text-align: center; padding: 10px 6px; font-size: 1.05rem; }
+.cardio.done input { border-color: rgba(198, 244, 50, .35); }
+.cardio.done .check { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.item .full { grid-column: 1 / -1; }
+.item .half { grid-column: span 2; }
+
 /* scheda editor */
 .item { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card2); }
 .item .name { grid-column: 1 / -1; display: flex; gap: 6px; }
@@ -114,6 +126,7 @@ textarea { resize: vertical; }
 .list { display: grid; gap: 0; }
 .li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .li:last-child { border-bottom: 0; }
+.workout.li { display: block; }
 .workout summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .workout summary::-webkit-details-marker { display: none; }
 .workout summary::after { content: "›"; color: var(--muted); font-size: 1.4rem; transition: transform .2s; }

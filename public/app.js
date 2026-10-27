@@ -182,7 +182,12 @@ function lastEntryFor(name) {
   }
   return null;
 }
+const CARDIO_RE = /tapis|tapir|treadmill|cyclette|bike|spinning|ellittic|vogator|rower|corsa|camminat|step|cardio|nuoto|stair|scale|corda|airbike|assault/i;
+const isCardioName = (name) => CARDIO_RE.test(name || '');
+const isCardio = (e) => e && e.type === 'cardio';
+const cardioText = (c) => [c.min != null ? fmtNum(c.min) + ' min' : '', c.km != null ? fmtNum(c.km, 2) + ' km' : '', c.kcal != null ? fmtNum(c.kcal, 0) + ' kcal' : ''].filter(Boolean).join(' · ') || '–';
 const setsText = (sets) => sets.map((s) => `${s.reps ?? '?'}${s.kg != null ? '×' + fmtNum(s.kg) + 'kg' : ''}`).join(' · ');
+const entryText = (e) => isCardio(e) ? cardioText(e.sets[0] || {}) : setsText(e.sets);
 const maxKg = (sets) => { const k = sets.map((s) => s.kg).filter((v) => v != null); return k.length ? Math.max(...k) : null; };
 
 function datalist() { return `<datalist id="exList">${exerciseNames().map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`; }
@@ -250,11 +255,35 @@ function viewOggi() {
     ${datalist()}`;
 }
 
+function typeSwitch(cardio, attrs) {
+  return `<div class="seg" role="group" aria-label="Tipo di esercizio">
+    <button class="${cardio ? '' : 'on'}" ${attrs} data-type="forza">Forza</button><button class="${cardio ? 'on' : ''}" ${attrs} data-type="cardio">Cardio</button></div>`;
+}
+
+function cardioCard(e, i) {
+  const c = e.sets[0] || (e.sets[0] = { min: null, km: null, kcal: null, done: false });
+  const prev = lastEntryFor(e.name);
+  const v = (x) => x != null ? String(x).replace('.', ',') : '';
+  return `<section class="card">
+    <div class="row between"><h3>${esc(e.name)}</h3><button class="icon" data-action="removeEntry" data-i="${i}" aria-label="Rimuovi esercizio">✕</button></div>
+    ${typeSwitch(true, `data-action="setEntryType" data-i="${i}"`)}
+    ${prev && isCardio(prev.e) ? `<p class="muted small">Ultima volta (${fmtShort(prev.w.date)}): ${entryText(prev.e)}</p>` : ''}
+    <div class="cardio ${c.done ? 'done' : ''}">
+      <label>Minuti<input inputmode="decimal" data-set="${i}.0.min" value="${v(c.min)}" placeholder="–"></label>
+      <label>Km<input inputmode="decimal" data-set="${i}.0.km" value="${v(c.km)}" placeholder="–"></label>
+      <label>Kcal<input inputmode="numeric" data-set="${i}.0.kcal" value="${v(c.kcal)}" placeholder="–"></label>
+      <button class="check" data-action="toggleSet" data-i="${i}" data-j="0" aria-label="Fatto">${c.done ? '✓' : ''}</button>
+    </div>
+  </section>`;
+}
+
 function entryCard(e, i) {
+  if (isCardio(e)) return cardioCard(e, i);
   const prev = lastEntryFor(e.name);
   return `<section class="card">
     <div class="row between"><h3>${esc(e.name)}</h3><button class="icon" data-action="removeEntry" data-i="${i}" aria-label="Rimuovi esercizio">✕</button></div>
-    ${prev ? `<p class="muted small">Ultima volta (${fmtShort(prev.w.date)}): ${setsText(prev.e.sets)}</p>` : ''}
+    ${typeSwitch(false, `data-action="setEntryType" data-i="${i}"`)}
+    ${prev && !isCardio(prev.e) ? `<p class="muted small">Ultima volta (${fmtShort(prev.w.date)}): ${setsText(prev.e.sets)}</p>` : ''}
     <div class="sets">
       <div class="set head"><span>#</span><span>Ripetiz.</span><span>Kg</span><span></span></div>
       ${e.sets.map((s, j) => `<div class="set ${s.done ? 'done' : ''}">
@@ -282,29 +311,35 @@ function viewStorico() {
 
   const names = usedExerciseNames();
   if (!ui.histEx || !names.includes(ui.histEx)) ui.histEx = names[0] || '';
-  const pts = ws.slice().reverse().map((w) => {
-    const e = w.entries.find((x) => x.name === ui.histEx);
-    const k = e ? maxKg(e.sets) : null;
+  const exEntries = ws.slice().reverse().map((w) => ({ w, e: w.entries.find((x) => x.name === ui.histEx) })).filter((x) => x.e);
+  const cardioEx = exEntries.length > 0 && isCardio(exEntries[exEntries.length - 1].e);
+  const cardioField = cardioEx && exEntries.filter((x) => x.e.sets[0]?.km != null).length >= 2 ? 'km' : 'min';
+  const unit = cardioEx ? (cardioField === 'km' ? 'km' : 'min') : 'kg';
+  const pts = exEntries.map(({ w, e }) => {
+    const k = cardioEx ? (isCardio(e) ? e.sets[0]?.[cardioField] ?? null : null) : (isCardio(e) ? null : maxKg(e.sets));
     return k != null ? { x: w.date, y: k } : null;
   }).filter(Boolean);
   const best = pts.length ? Math.max(...pts.map((p) => p.y)) : null;
+  const monthCardio = ws.filter((w) => w.date.startsWith(monthKey)).flatMap((w) => w.entries.filter(isCardio)).reduce((t, e) => t + (e.sets[0]?.min || 0), 0);
 
   return `<section class="card"><h2>I tuoi numeri</h2>
       <div class="stats">
         <div class="stat"><b>${thisWeek}</b><span>ultimi 7 giorni</span></div>
         <div class="stat"><b>${thisMonth}</b><span>questo mese</span></div>
         <div class="stat"><b>${ws.length}</b><span>totali</span></div>
-      </div></section>
-    <section class="card"><p class="label">Progressi per esercizio (carico massimo)</p>
+      </div>
+      ${monthCardio ? `<p class="muted small">🏃 Cardio questo mese: <b>${fmtNum(monthCardio, 0)} minuti</b></p>` : ''}</section>
+    <section class="card"><p class="label">Progressi per esercizio</p>
       ${names.length ? `<select data-action-change="histEx">${names.map((n) => `<option ${n === ui.histEx ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
-      ${best != null ? `<p class="muted small">Record: <b class="pos">${fmtNum(best)} kg</b></p>` : '<p class="muted small">Nessun carico registrato per questo esercizio.</p>'}
-      ${chart(pts, 'kg')}` : ''}
+      <p class="muted small">${cardioEx ? (unit === 'km' ? 'Distanza (km) per sessione' : 'Durata (minuti) per sessione') : 'Carico massimo (kg) per sessione'}
+      ${best != null ? ` · Record: <b class="pos">${fmtNum(best, 2)} ${unit}</b>` : ''}</p>
+      ${chart(pts, unit)}` : ''}
     </section>
     <section class="card"><p class="label">Allenamenti</p><div class="list">
       ${ws.map((w) => `<details class="workout li">
         <summary><div><b>${esc(w.name)}</b><div class="muted small">${fmtDate(w.date)}${w.duration ? ' · ' + w.duration + ' min' : ''} · ${w.entries.length} esercizi</div></div></summary>
         <div class="detail">
-          ${w.entries.map((e) => `<div class="ex-line"><b>${esc(e.name)}</b><span>${setsText(e.sets)}</span></div>`).join('')}
+          ${w.entries.map((e) => `<div class="ex-line"><b>${esc(e.name)}</b><span>${isCardio(e) ? '🏃 ' : ''}${entryText(e)}</span></div>`).join('')}
           ${w.notes ? `<p class="muted small">📝 ${esc(w.notes)}</p>` : ''}
           <div class="row"><button class="btn small" data-action="repeatWorkout" data-id="${w.id}">Ripeti</button>
           <button class="btn small ghost danger" data-action="deleteWorkout" data-id="${w.id}">Elimina</button></div>
@@ -354,14 +389,18 @@ function viewSchede() {
       </section>
       ${d.items.map((it, i) => `<div class="item">
         <div class="name"><input list="exList" data-item="${i}.name" value="${esc(it.name)}" placeholder="Esercizio"><button class="icon" data-action="removeItem" data-i="${i}" aria-label="Rimuovi">✕</button></div>
+        <div class="full">${typeSwitch(it.type === 'cardio', `data-action="setItemType" data-i="${i}"`)}</div>
+        ${it.type === 'cardio' ? `
+        <label class="half">Minuti<input inputmode="decimal" data-item="${i}.min" value="${it.min ?? ''}" placeholder="auto"></label>
+        <label class="half">Km<input inputmode="decimal" data-item="${i}.km" value="${it.km ?? ''}" placeholder="auto"></label>` : `
         <label>Serie<input inputmode="numeric" data-item="${i}.sets" value="${it.sets ?? ''}"></label>
         <label>Ripetiz.<input inputmode="numeric" data-item="${i}.reps" value="${it.reps ?? ''}"></label>
         <label>Kg<input inputmode="decimal" data-item="${i}.kg" value="${it.kg ?? ''}" placeholder="auto"></label>
-        <label>Recup. s<input inputmode="numeric" data-item="${i}.rest" value="${it.rest ?? ''}"></label>
+        <label>Recup. s<input inputmode="numeric" data-item="${i}.rest" value="${it.rest ?? ''}"></label>`}
       </div>`).join('')}
       <button class="btn wide" data-action="addItem">+ Aggiungi esercizio</button>
       <div class="row"><button class="btn ghost wide" data-action="cancelDraft">Annulla</button><button class="btn primary wide" data-action="saveDraft">Salva scheda</button></div>
-      <p class="muted small">Se lasci vuoti i Kg, all'avvio verranno proposti quelli dell'ultima volta.</p>
+      <p class="muted small">Se lasci vuoti Kg, minuti o km, all'avvio verranno proposti quelli dell'ultima volta. Tapis roulant, cyclette, ellittica e simili vengono impostati come cardio in automatico.</p>
       ${datalist()}`;
   }
   return `<section class="card"><div class="row between"><h2>Le tue schede</h2><button class="btn primary small" data-action="newRoutine">+ Nuova</button></div>
@@ -396,10 +435,22 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.ad
 function newWorkout(name, entries, routineId = null) {
   data.active = { id: uid(), date: today(), startTime: nowTime(), startedAt: Date.now(), name, routineId, entries, notes: '' };
 }
+function cardioFromLast(name, min, km) {
+  const prev = lastEntryFor(name);
+  const pc = prev && isCardio(prev.e) ? prev.e.sets[0] || {} : {};
+  return [{ min: min ?? pc.min ?? null, km: km ?? pc.km ?? null, kcal: null, done: false }];
+}
+function makeEntry(name, opts = {}) {
+  const prev = lastEntryFor(name);
+  const cardio = opts.type ? opts.type === 'cardio' : prev ? isCardio(prev.e) : isCardioName(name);
+  if (cardio) return { name, type: 'cardio', sets: cardioFromLast(name, opts.min ?? null, opts.km ?? null) };
+  const n = opts.sets || (prev && !isCardio(prev.e) ? prev.e.sets.length : 3);
+  return { name, rest: opts.rest ?? (prev && !isCardio(prev.e) ? prev.e.rest : null) ?? 90, sets: setsFromLast(name, n, opts.reps ?? null, opts.kg ?? null) };
+}
 function setsFromLast(name, n, reps, kg) {
   const prev = lastEntryFor(name);
   return Array.from({ length: n }, (_, j) => {
-    const ps = prev?.e.sets[j] || prev?.e.sets[prev.e.sets.length - 1];
+    const ps = prev && !isCardio(prev.e) ? prev.e.sets[j] || prev.e.sets[prev.e.sets.length - 1] : null;
     return { reps: reps ?? ps?.reps ?? null, kg: kg ?? ps?.kg ?? null, done: false };
   });
 }
@@ -416,19 +467,20 @@ const actions = {
   startFree: () => { newWorkout('Allenamento libero', []); save(); setTimeout(() => $('#newEx')?.focus(), 50); },
   startRoutine: (b) => {
     const r = data.routines.find((x) => x.id === b.dataset.id); if (!r) return;
-    newWorkout(r.name, r.items.map((it) => ({ name: it.name, rest: it.rest ?? 90, sets: setsFromLast(it.name, it.sets || 3, it.reps ?? null, it.kg ?? null) })), r.id);
+    newWorkout(r.name, r.items.map((it) => makeEntry(it.name, { type: it.type || (isCardioName(it.name) ? 'cardio' : 'forza'), sets: it.sets || 3, reps: it.reps ?? null, kg: it.kg ?? null, rest: it.rest ?? 90, min: it.min ?? null, km: it.km ?? null })), r.id);
     save();
   },
   repeatWorkout: (b) => {
     if (data.active && !confirm('Hai già un allenamento in corso. Sostituirlo?')) return;
     const w = data.workouts.find((x) => x.id === b.dataset.id); if (!w) return;
-    newWorkout(w.name, w.entries.map((e) => ({ name: e.name, rest: e.rest ?? 90, sets: e.sets.map((s) => ({ reps: s.reps, kg: s.kg, done: false })) })), w.routineId);
+    newWorkout(w.name, w.entries.map((e) => isCardio(e)
+      ? { name: e.name, type: 'cardio', sets: [{ ...(e.sets[0] || {}), done: false }] }
+      : { name: e.name, rest: e.rest ?? 90, sets: e.sets.map((s) => ({ reps: s.reps, kg: s.kg, done: false })) }), w.routineId);
     tab = 'oggi'; save(); window.scrollTo(0, 0);
   },
   addEntry: () => {
     const name = $('#newEx').value.trim(); if (!name) return $('#newEx').focus();
-    const prev = lastEntryFor(name);
-    data.active.entries.push({ name, rest: prev?.e.rest ?? 90, sets: setsFromLast(name, prev?.e.sets.length || 3, null, null) });
+    data.active.entries.push(makeEntry(name));
     save();
   },
   removeEntry: (b) => { if (confirm('Rimuovere questo esercizio?')) { data.active.entries.splice(+b.dataset.i, 1); save(); } },
@@ -437,17 +489,29 @@ const actions = {
   toggleSet: (b) => {
     const e = data.active.entries[+b.dataset.i]; const s = e.sets[+b.dataset.j];
     s.done = !s.done;
-    if (s.done) startTimer(e.rest || 90);
+    if (s.done && !isCardio(e)) startTimer(e.rest || 90);
     save();
+  },
+  setEntryType: (b) => {
+    const i = +b.dataset.i, e = data.active.entries[i];
+    if ((b.dataset.type === 'cardio') === isCardio(e)) return;
+    data.active.entries[i] = makeEntry(e.name, { type: b.dataset.type });
+    save();
+  },
+  setItemType: (b) => {
+    const it = ui.draft.items[+b.dataset.i];
+    it.type = b.dataset.type; it.typeManual = true; render();
   },
   cancelWorkout: () => { if (confirm('Annullare l\'allenamento in corso? Non verrà salvato.')) { data.active = null; stopTimer(); save(); } },
   finishWorkout: () => {
     const a = data.active;
-    const entries = a.entries.map((e) => ({ name: e.name, rest: e.rest, sets: e.sets.filter((s) => s.done).map(({ reps, kg }) => ({ reps, kg })) }))
+    const entries = a.entries.map((e) => isCardio(e)
+      ? { name: e.name, type: 'cardio', sets: e.sets.filter((s) => s.done).map(({ min, km, kcal }) => ({ min, km, kcal })) }
+      : { name: e.name, rest: e.rest, sets: e.sets.filter((s) => s.done).map(({ reps, kg }) => ({ reps, kg })) })
       .filter((e) => e.sets.length);
-    if (!entries.length) { alert('Spunta ✓ almeno una serie completata prima di salvare.'); return; }
+    if (!entries.length) { alert('Spunta ✓ almeno una serie o un cardio completato prima di salvare.'); return; }
     const skipped = a.entries.reduce((n, e) => n + e.sets.filter((s) => !s.done).length, 0);
-    if (skipped && !confirm(`${skipped} serie non spuntate non verranno salvate. Continuare?`)) return;
+    if (skipped && !confirm(`${skipped} serie/cardio non spuntati non verranno salvati. Continuare?`)) return;
     data.workouts.push({ id: a.id, date: a.date, startTime: a.startTime, name: a.name, routineId: a.routineId, entries, notes: a.notes || '',
       duration: Math.max(1, Math.round((Date.now() - a.startedAt) / 60000)) });
     data.active = null; stopTimer(); save(); toast('Allenamento salvato 💪');
@@ -522,6 +586,11 @@ document.addEventListener('input', (ev) => {
 document.addEventListener('change', (ev) => {
   const el = ev.target;
   if (el.dataset.actionChange === 'histEx') { ui.histEx = el.value; render(); }
+  if (el.dataset.item && el.dataset.item.endsWith('.name') && ui.draft) {
+    const it = ui.draft.items[+el.dataset.item.split('.')[0]];
+    const t = isCardioName(it.name) ? 'cardio' : 'forza';
+    if (!it.typeManual && (it.type || 'forza') !== t) { it.type = t; render(); }
+  }
   if (el.id === 'importFile' && el.files[0]) {
     el.files[0].text().then((txt) => {
       const d = JSON.parse(txt);
