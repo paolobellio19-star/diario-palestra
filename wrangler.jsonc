@@ -1,0 +1,15 @@
+{
+  "name": "diario-palestra",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DIARIO",
+      "id": "6a4f0e804dc8457bb2bafba38db16df6"
+    }
+  ]
+}
