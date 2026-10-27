@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Diario Palestra</title>
+  <meta name="theme-color" content="#121417">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Palestra">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Diario<span>Palestra</span></h1>
+    <span id="sync" class="sync"></span>
+  </header>
+
+  <main id="view"></main>
+
+  <div id="timer" class="timer hidden" role="timer" aria-live="polite">
+    <div class="timer-bar" id="timerBar"></div>
+    <span class="timer-label">Recupero</span>
+    <strong id="timerTime">0:00</strong>
+    <button data-action="timerAdd" data-s="-15">−15</button>
+    <button data-action="timerAdd" data-s="15">+15</button>
+    <button data-action="timerStop" aria-label="Ferma timer">✕</button>
+  </div>
+
+  <nav class="tabs">
+    <button data-tab="oggi"><span>🏋️</span>Oggi</button>
+    <button data-tab="storico"><span>📈</span>Storico</button>
+    <button data-tab="peso"><span>⚖️</span>Peso</button>
+    <button data-tab="schede"><span>📋</span>Schede</button>
+  </nav>
+
+  <div id="login" class="overlay hidden">
+    <form class="card login" id="loginForm">
+      <h2>Benvenuto 👋</h2>
+      <p class="muted">Inserisci la password che hai impostato su Cloudflare per sincronizzare il diario tra i tuoi dispositivi.</p>
+      <input type="password" id="pw" placeholder="Password" autocomplete="current-password" required>
+      <p id="loginErr" class="err"></p>
+      <button class="btn primary wide" type="submit">Entra</button>
+      <button class="btn ghost wide" type="button" data-action="localMode">Usa solo su questo dispositivo</button>
+    </form>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
