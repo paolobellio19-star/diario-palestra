@@ -121,6 +121,8 @@ let actx = null;
 
 function unlockAudio() {
   try {
+    // iPhone: fa suonare i bip anche con il telefono in modalità silenziosa
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     if (actx.state === 'suspended') actx.resume();
   } catch { /* nessun audio */ }
@@ -143,11 +145,35 @@ function tick() {
   $('#timerBar').style.width = Math.min(100, 100 * left / timer.total) + '%';
 }
 function stopTimer() { clearInterval(timer.iv); timer.iv = null; timer.end = 0; $('#timer').classList.add('hidden'); }
+// iPhone (iOS 18+): i siti non possono vibrare, ma attivare un interruttore
+// "switch" produce un piccolo tocco haptic. Su Android si usa la vibrazione vera.
+let hapticLabel = null;
+function haptic() {
+  if (navigator.vibrate) { navigator.vibrate(200); return; }
+  try {
+    if (!hapticLabel) {
+      const input = document.createElement('input');
+      input.type = 'checkbox'; input.id = 'hapticSwitch'; input.setAttribute('switch', '');
+      hapticLabel = document.createElement('label');
+      hapticLabel.htmlFor = 'hapticSwitch';
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;left:-9px;top:0';
+      box.append(input, hapticLabel); document.body.append(box);
+    }
+    hapticLabel.click();
+  } catch { /* non supportato */ }
+}
+function flash() {
+  const f = $('#flash'); if (!f) return;
+  f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+}
 function alarm() {
-  if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
   toast('Recupero finito! 💪');
+  flash();
+  [0, 180, 360, 700, 880, 1060].forEach((ms) => setTimeout(haptic, ms));
   if (!actx) return;
-  [0, 0.28, 0.56].forEach((t) => {
+  if (actx.state === 'suspended') actx.resume();
+  [0, 0.28, 0.56, 1.1, 1.38, 1.66].forEach((t) => {
     const o = actx.createOscillator(), g = actx.createGain();
     o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
     const st = actx.currentTime + t;
@@ -157,6 +183,24 @@ function alarm() {
     o.start(st); o.stop(st + 0.25);
   });
 }
+
+/* ---------- schermo sempre acceso durante l'allenamento ---------- */
+let wakeLock = null;
+async function syncWakeLock() {
+  const want = !!data.active && document.visibilityState === 'visible';
+  try {
+    if (want && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!want && wakeLock) {
+      await wakeLock.release(); wakeLock = null;
+    }
+  } catch { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  syncWakeLock();
+  if (document.visibilityState === 'visible' && timer.iv) tick();
+});
 
 /* ---------- utilità sui dati ---------- */
 function exerciseNames() {
@@ -426,6 +470,7 @@ function render() {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   const views = { oggi: viewOggi, storico: viewStorico, peso: viewPeso, schede: viewSchede };
   $('#view').innerHTML = views[tab]();
+  syncWakeLock();
 }
 
 let toastT;
@@ -606,6 +651,8 @@ document.addEventListener('keydown', (ev) => {
   if (ev.target.id === 'newEx') actions.addEntry();
   if (ev.target.id === 'wKg') actions.addWeight();
 });
+
+document.addEventListener('pointerdown', unlockAudio, { once: true });
 
 /* ---------- avvio ---------- */
 render();

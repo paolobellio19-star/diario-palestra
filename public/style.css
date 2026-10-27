@@ -159,6 +159,11 @@ textarea { resize: vertical; }
 .timer strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; margin-right: auto; }
 .timer button { background: rgba(0,0,0,.14); border: 0; border-radius: 8px; padding: 8px 10px; font-weight: 700; cursor: pointer; color: inherit; }
 
+/* lampeggio a fine timer */
+.flash { position: fixed; inset: 0; z-index: 40; pointer-events: none; background: var(--accent); opacity: 0; }
+.flash.on { animation: flash 1.8s ease-out; }
+@keyframes flash { 0%, 30%, 60% { opacity: .85; } 15%, 45%, 100% { opacity: 0; } }
+
 /* nav */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 8;
