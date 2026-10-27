@@ -209,6 +209,13 @@ textarea { resize: vertical; }
 .sheet-box { width: 100%; max-width: 640px; border-radius: var(--radius) var(--radius) 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); max-height: 90vh; overflow: auto; align-content: start; }
 @media (min-width: 700px) { .overlay.modal { place-items: center; padding: 16px; } .sheet-box { border-radius: var(--radius); } }
 
+/* bilancio calorie */
+.eq { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: center; gap: 4px; text-align: center; background: var(--card2); border-radius: 10px; padding: 10px 6px; }
+.eq div { display: grid; gap: 2px; }
+.eq b { font-size: 1.05rem; }
+.eq span { font-size: .7rem; color: var(--muted); }
+.eq i { font-style: normal; color: var(--muted); font-weight: 700; }
+
 /* salute */
 .seg.wide.three { grid-template-columns: repeat(3, 1fr); }
 .stat em { font-style: normal; font-weight: 600; }

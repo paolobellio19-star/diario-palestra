@@ -716,12 +716,13 @@ const MEALS = [
   { id: 'pranzo', label: 'Pranzo', icon: '🍝' },
   { id: 'cena', label: 'Cena', icon: '🍽️' },
   { id: 'spuntini', label: 'Spuntini', icon: '🍎' },
+  { id: 'bevande', label: 'Bevande', icon: '🥤' },
 ];
 const ACTIVITY = [
-  { v: 1.2, label: 'Sedentario (lavoro seduto, poco movimento)' },
-  { v: 1.375, label: 'Leggero (palestra 1-3 volte a settimana)' },
-  { v: 1.55, label: 'Moderato (palestra 3-5 volte a settimana)' },
-  { v: 1.725, label: 'Intenso (sport quasi tutti i giorni)' },
+  { v: 1.2, label: 'Sedentario – consigliato con Apple Watch' },
+  { v: 1.3, label: 'In piedi una parte del giorno' },
+  { v: 1.45, label: 'Lavoro in piedi / sempre in movimento' },
+  { v: 1.6, label: 'Lavoro fisico pesante' },
 ];
 const foodState = { sheet: null, profDraft: null, editProfile: false };
 const GENERIC = (window.GENERIC_FOODS || []).map(([name, kcal, p, c, f, serving, label], i) =>
@@ -743,20 +744,34 @@ const shiftDate = (iso, d) => { const x = dateObj(iso); x.setDate(x.getDate() + 
 const dayFood = (iso) => (data.food && data.food[iso]) || [];
 const nut = (it) => { const k = (it.g || 0) / 100, p = it.per100 || {}; return { kcal: (p.kcal || 0) * k, p: (p.p || 0) * k, c: (p.c || 0) * k, f: (p.f || 0) * k }; };
 const sumNut = (items) => items.reduce((t, it) => { const n = nut(it); t.kcal += n.kcal; t.p += n.p; t.c += n.c; t.f += n.f; return t; }, { kcal: 0, p: 0, c: 0, f: 0 });
+const isDrink = (f, meal) => meal === 'bevande' || /\bml\b/.test((f && f.servingLabel) || '');
+const unitOf = (it) => it.unit || 'g';
 const latestWeight = () => { const w = sortedWeights(); return w.length ? w[w.length - 1].kg : null; };
 
-function targets() {
+// Calorie bruciate con l'attività in un giorno: Apple Watch (calorie attive)
+// se disponibili, altrimenti le kcal segnate nel cardio in palestra.
+function burnedOn(iso) {
+  const watch = data.health && data.health[iso] && data.health[iso].kcal;
+  if (watch != null) return { kcal: watch, src: 'watch' };
+  const c = cardioKcal(iso);
+  return { kcal: c, src: c ? 'cardio' : null };
+}
+
+// Modello "netto": obiettivo base (senza sport) + calorie bruciate con l'attività.
+function targets(iso = ui.foodDate || today()) {
   const pr = data.profile; if (!pr) return null;
   const w = latestWeight() ?? pr.weight; if (!w || !pr.height || !pr.age) return null;
   const male = pr.sex !== 'f';
   const bmr = 10 * w + 6.25 * pr.height - 5 * pr.age + (male ? 5 : -161);
-  const tdee = bmr * (pr.activity || 1.375);
+  const tdee = bmr * (pr.activity || 1.2);
   const lose = pr.goal !== 'mantenere';
-  const kcal = Math.round(lose ? Math.max(tdee - 400, male ? 1500 : 1200) : tdee);
+  const base = Math.round(lose ? Math.max(tdee - 400, male ? 1500 : 1200) : tdee);
+  const burned = burnedOn(iso);
+  const kcal = base + Math.round(burned.kcal || 0);
   const p = Math.round(w * (lose ? 1.6 : 1.4));
   const f = Math.round(kcal * 0.28 / 9);
   const c = Math.max(0, Math.round((kcal - p * 4 - f * 9) / 4));
-  return { kcal, p, c, f, tdee: Math.round(tdee), w };
+  return { kcal, base, burned, p, c, f, tdee: Math.round(tdee), w };
 }
 
 function cardioKcal(iso) {
@@ -771,7 +786,7 @@ function bar(value, target, cls = '') {
 }
 
 function viewProfile() {
-  const pr = foodState.profDraft || (foodState.profDraft = { sex: 'm', age: '', height: '', weight: latestWeight() ?? '', activity: 1.375, goal: 'dimagrire', ...(data.profile || {}) });
+  const pr = foodState.profDraft || (foodState.profDraft = { sex: 'm', age: '', height: '', weight: latestWeight() ?? '', activity: 1.2, goal: 'dimagrire', ...(data.profile || {}) });
   if (latestWeight() != null && !foodState.profDraft._wTouched) pr.weight = latestWeight();
   return `<section class="card">
     <h2>${data.profile ? 'I tuoi dati' : 'Calcoliamo il tuo obiettivo'}</h2>
@@ -782,7 +797,8 @@ function viewProfile() {
       <label>Altezza<input inputmode="numeric" data-prof="height" value="${pr.height ?? ''}" placeholder="cm"></label>
       <label>Peso attuale<input inputmode="decimal" data-prof="weight" value="${pr.weight != null ? String(pr.weight).replace('.', ',') : ''}" placeholder="kg"></label>
     </div>
-    <label class="block-l">Attività<select data-prof="activity">${ACTIVITY.map((a) => `<option value="${a.v}" ${Number(pr.activity) === a.v ? 'selected' : ''}>${a.label}</option>`).join('')}</select></label>
+    <label class="block-l">Attività quotidiana (palestra esclusa)<select data-prof="activity">${ACTIVITY.map((a) => `<option value="${a.v}" ${Number(pr.activity) === a.v ? 'selected' : ''}>${a.label}</option>`).join('')}</select></label>
+    <p class="muted small">La palestra e il movimento non vanno contati qui: le calorie bruciate (Apple Watch o cardio) vengono aggiunte ogni giorno a parte.</p>
     <label class="block-l">Obiettivo<select data-prof="goal">
       <option value="dimagrire" ${pr.goal !== 'mantenere' ? 'selected' : ''}>Dimagrire gradualmente (circa −0,4 kg a settimana)</option>
       <option value="mantenere" ${pr.goal === 'mantenere' ? 'selected' : ''}>Mantenere il peso</option></select></label>
@@ -792,9 +808,11 @@ function viewProfile() {
 
 function viewCibo() {
   if (!data.profile || foodState.editProfile) return viewProfile();
-  const d = ui.foodDate, items = dayFood(d), tot = sumNut(items), t = targets();
-  const burned = cardioKcal(d);
+  // profili creati prima del calcolo "netto": l'attività ora esclude la palestra
+  if (!data.profile.net) { data.profile.activity = 1.2; data.profile.net = true; save(false); }
+  const d = ui.foodDate, items = dayFood(d), tot = sumNut(items), t = targets(d);
   const left = t ? t.kcal - tot.kcal : null;
+  const b = t ? t.burned : { kcal: 0, src: null };
   const isToday = d === today();
   return `<section class="card day-nav">
       <button class="icon big" data-action="foodDay" data-d="-1" aria-label="Giorno precedente">‹</button>
@@ -810,7 +828,14 @@ function viewCibo() {
         <div><span>Carboidrati</span><b>${fmtNum(tot.c, 0)}<small>/${t ? t.c : '–'} g</small></b>${bar(tot.c, t?.c, 'c')}</div>
         <div><span>Grassi</span><b>${fmtNum(tot.f, 0)}<small>/${t ? t.f : '–'} g</small></b>${bar(tot.f, t?.f, 'f')}</div>
       </div>
-      ${burned ? `<p class="muted small">🏃 Cardio di oggi: −${fmtNum(burned, 0)} kcal (già considerato nel tuo livello di attività)</p>` : ''}
+      ${t ? `<div class="eq">
+        <div><b>${fmtNum(t.base, 0)}</b><span>obiettivo</span></div><i>+</i>
+        <div><b>${fmtNum(b.kcal, 0)}</b><span>${b.src === 'watch' ? '⌚ bruciate' : b.src === 'cardio' ? '🏃 cardio' : 'bruciate'}</span></div><i>−</i>
+        <div><b>${fmtNum(tot.kcal, 0)}</b><span>mangiate</span></div><i>=</i>
+        <div><b class="${left >= 0 ? 'pos' : 'neg'}">${fmtNum(left, 0)}</b><span>${left >= 0 ? 'restano' : 'oltre'}</span></div>
+      </div>
+      <p class="muted small">Netto (mangiate − bruciate): <b>${fmtNum(tot.kcal - b.kcal, 0)} kcal</b> su un obiettivo di ${fmtNum(t.base, 0)}.
+        ${b.src !== 'watch' && d >= shiftDate(today(), -1) ? 'Le calorie attive dell\'Apple Watch di questo giorno arrivano la mattina dopo alle 8:30.' : ''}</p>` : ''}
     </section>
     ${MEALS.map((m) => {
       const its = items.map((it, idx) => ({ it, idx })).filter((x) => x.it.meal === m.id);
@@ -818,14 +843,14 @@ function viewCibo() {
       return `<section class="card meal">
         <div class="row between"><h3>${m.icon} ${m.label}</h3><span class="muted">${its.length ? fmtNum(mt.kcal, 0) + ' kcal' : ''}</span></div>
         ${its.length ? `<div class="list">${its.map(({ it, idx }) => `<div class="li food-li">
-          <button class="food-name" data-action="editFood" data-idx="${idx}"><b>${esc(it.name)}</b><small>${it.brand ? esc(it.brand) + ' · ' : ''}${fmtNum(it.g, 0)} g · ${fmtNum(nut(it).kcal, 0)} kcal</small></button>
+          <button class="food-name" data-action="editFood" data-idx="${idx}"><b>${esc(it.name)}</b><small>${it.brand ? esc(it.brand) + ' · ' : ''}${fmtNum(it.g, 0)} ${unitOf(it)} · ${fmtNum(nut(it).kcal, 0)} kcal</small></button>
           <button class="icon" data-action="delFood" data-idx="${idx}" aria-label="Elimina">✕</button></div>`).join('')}</div>` : ''}
         <div class="row"><button class="btn small" data-action="openFoodSheet" data-meal="${m.id}">+ Aggiungi</button>
         ${its.length > 1 ? `<button class="btn small ghost" data-action="saveMeal" data-meal="${m.id}">☆ Salva come pasto</button>` : ''}</div>
       </section>`;
     }).join('')}
     <section class="card"><div class="row between"><div><p class="label">Il tuo obiettivo</p>
-      <p class="muted small">${t ? `${fmtNum(t.kcal, 0)} kcal al giorno (fabbisogno stimato ${fmtNum(t.tdee, 0)}) · peso ${fmtNum(t.w)} kg` : 'Completa i tuoi dati'}</p></div>
+      <p class="muted small">${t ? `${fmtNum(t.base, 0)} kcal al giorno + le calorie bruciate con l'attività · peso ${fmtNum(t.w)} kg` : 'Completa i tuoi dati'}</p></div>
       <button class="btn small" data-action="editProfile">Modifica</button></div>
       <p class="muted small">Sono stime: se in 2-3 settimane il peso non scende come previsto, si aggiusta l'obiettivo.</p>
     </section>`;
@@ -853,10 +878,10 @@ function renderSheet() {
     const f = s.pick, g = s.grams ?? f.serving ?? f.lastG ?? 100, n = nut({ g, per100: f.per100 });
     s.grams = g;
     body = `<button class="btn small ghost" data-action="sheetBack">‹ Indietro</button>
-      <div><h3>${esc(f.name)}</h3><p class="muted small">${f.brand ? esc(f.brand) + ' · ' : ''}per 100 g: ${f.per100.kcal} kcal · P ${fmtNum(f.per100.p)} · C ${fmtNum(f.per100.c)} · G ${fmtNum(f.per100.f)}</p></div>
-      <label class="qty">Quantità<span class="row"><input id="foodG" inputmode="decimal" value="${fmtNum(g, 1)}"><b>g</b></span></label>
+      <div><h3>${esc(f.name)}</h3><p class="muted small">${f.brand ? esc(f.brand) + ' · ' : ''}per 100 ${isDrink(f, s.meal) ? 'ml' : 'g'}: ${f.per100.kcal} kcal · P ${fmtNum(f.per100.p)} · C ${fmtNum(f.per100.c)} · G ${fmtNum(f.per100.f)}</p></div>
+      <label class="qty">Quantità<span class="row"><input id="foodG" inputmode="decimal" value="${fmtNum(g, 1)}"><b>${isDrink(f, s.meal) ? 'ml' : 'g'}</b></span></label>
       <div class="chips">${f.serving ? `<button class="chip" data-action="setG" data-g="${f.serving}">${f.servingLabel ? esc(f.servingLabel) : '1 porzione (' + f.serving + ' g)'}</button>` : ''}
-        ${[30, 50, 100, 150, 200].map((x) => `<button class="chip" data-action="setG" data-g="${x}">${x} g</button>`).join('')}</div>
+        ${(isDrink(f, s.meal) ? [100, 200, 250, 330, 500] : [30, 50, 100, 150, 200]).map((x) => `<button class="chip" data-action="setG" data-g="${x}">${x} ${isDrink(f, s.meal) ? 'ml' : 'g'}</button>`).join('')}</div>
       <div class="preview" id="foodPrev">${previewHtml(n)}</div>
       <button class="btn primary wide" data-action="addFood">Aggiungi a ${meal.label}</button>`;
   } else {
@@ -936,7 +961,7 @@ function upsertLibrary(f, g) {
 function addFoodItems(meal, list) {
   data.food = data.food || {};
   const arr = data.food[ui.foodDate] || (data.food[ui.foodDate] = []);
-  list.forEach((f) => { arr.push({ id: uid(), meal, name: f.name, brand: f.brand || '', g: f.g, per100: f.per100 }); upsertLibrary(f, f.g); });
+  list.forEach((f) => { arr.push({ id: uid(), meal, name: f.name, brand: f.brand || '', g: f.g, per100: f.per100, unit: f.unit || (isDrink(f, meal) ? 'ml' : 'g') }); upsertLibrary(f, f.g); });
 }
 
 Object.assign(actions, {
@@ -949,7 +974,7 @@ Object.assign(actions, {
     if (!age || age < 14 || age > 100) return toast('Inserisci un\'età valida');
     if (!height || height < 120 || height > 230) return toast('Inserisci l\'altezza in cm');
     if (!weight || weight < 30 || weight > 300) return toast('Inserisci il peso in kg');
-    data.profile = { sex: d.sex, age, height, weight, activity: Number(d.activity), goal: d.goal };
+    data.profile = { sex: d.sex, age, height, weight, activity: Number(d.activity), goal: d.goal, net: true };
     if (latestWeight() !== weight) { data.weights = data.weights.filter((w) => w.date !== today()); data.weights.push({ id: uid(), date: today(), kg: weight }); }
     foodState.editProfile = false; foodState.profDraft = null; save(); toast('Obiettivo calcolato');
   },
@@ -972,8 +997,8 @@ Object.assign(actions, {
   setG: (b) => { foodState.sheet.grams = +b.dataset.g; renderSheet(); },
   addFood: () => {
     const s = foodState.sheet, g = num($('#foodG').value);
-    if (!g || g <= 0 || g > 5000) return toast('Inserisci i grammi');
-    addFoodItems(s.meal, [{ ...s.pick, g }]);
+    if (!g || g <= 0 || g > 5000) return toast('Inserisci la quantità');
+    addFoodItems(s.meal, [{ ...s.pick, g, unit: isDrink(s.pick, s.meal) ? 'ml' : 'g' }]);
     const m = MEALS.find((x) => x.id === s.meal);
     closeSheet(); save(); toast(`Aggiunto a ${m.label}`);
   },
@@ -989,12 +1014,12 @@ Object.assign(actions, {
     const name = (prompt('Nome del pasto (es. "La mia colazione")', 'La mia ' + def.toLowerCase()) || '').trim();
     if (!name) return;
     data.meals = data.meals || [];
-    data.meals.push({ id: uid(), name, items: its.map(({ name, brand, g, per100 }) => ({ name, brand, g, per100 })) });
+    data.meals.push({ id: uid(), name, items: its.map(({ name, brand, g, per100, unit }) => ({ name, brand, g, per100, unit })) });
     save(); toast('Pasto salvato ☆');
   },
   editFood: (b) => {
     const it = dayFood(ui.foodDate)[+b.dataset.idx];
-    const v = prompt(`Grammi di ${it.name}`, fmtNum(it.g, 1));
+    const v = prompt(`${unitOf(it) === 'ml' ? 'Millilitri' : 'Grammi'} di ${it.name}`, fmtNum(it.g, 1));
     if (v == null) return;
     const g = num(v); if (!g || g <= 0) return toast('Quantità non valida');
     it.g = g; save();
