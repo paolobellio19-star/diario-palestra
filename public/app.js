@@ -84,6 +84,7 @@ async function pull() {
     if (remote && remote.updatedAt > data.updatedAt) { adoptRemote(remote); setSync('ok', 'Sincronizzato'); }
     else if (!remote || remote.updatedAt < data.updatedAt) await push();
     else setSync('ok', 'Sincronizzato');
+    if (migratePostura()) save();
   } catch (e) {
     if (e.auth) return showLogin('Password errata.');
     setSync('off', 'Offline · salvato qui');
@@ -239,9 +240,25 @@ function datalist() { return `<datalist id="exList">${exerciseNames().map((n) =>
 /* ---------- schede consigliate ---------- */
 const POSTURA = [
   { name: 'Gatto-mucca', sets: 2, reps: 10, rest: 30 },
+  { name: 'Intra rotazione anche (90/90)', sets: 2, reps: 8, rest: 30 },
   { name: 'Superman', sets: 3, reps: 10, rest: 30 },
-  { name: 'Rotazione busto 90/90', sets: 2, reps: 8, rest: 30 },
+  { name: 'Extra rotazione spalle a terra', sets: 2, reps: 12, rest: 30 },
+  { name: 'Extra rotazione spalle con elastico', sets: 3, reps: 12, rest: 30 },
 ];
+const OLD_POSTURA = ['Gatto-mucca', 'Superman', 'Rotazione busto 90/90'];
+// aggiorna i posturali delle schede A/B/C già salvate
+function migratePostura() {
+  if (data.postura2) return false;
+  let changed = false;
+  data.routines.forEach((r) => {
+    if (!PRESETS.some((p) => p.name === r.name)) return;
+    const rest = r.items.filter((i) => !OLD_POSTURA.includes(i.name));
+    r.items = [...POSTURA.map((i) => ({ ...i })), ...rest];
+    changed = true;
+  });
+  data.postura2 = true;
+  return changed;
+}
 const TAPIS = { name: 'Tapis roulant', type: 'cardio', min: 15 };
 const f = (name, sets, reps, rest) => ({ name, sets, reps, kg: null, rest });
 const PRESETS = [
@@ -1160,5 +1177,6 @@ Object.assign(actions, {
 });
 
 /* ---------- avvio ---------- */
+if (mode() === 'local' && migratePostura()) save();
 render();
 if (!mode()) showLogin(); else pull();
